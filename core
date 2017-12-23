@@ -1,0 +1,131 @@
+#include <iostream>
+#include <unordered_map>
+
+
+/// Избавиться от избыточных связей.
+/// Можно изменять абстракции.
+/// Cделать не возможным менять состояние database из databe_api(если очень хочется то сделать возможным).
+/// придумать слой взаимодействия для database_api <-> network.
+/// придумать слой взаимодействия для database <-> database_api.
+/// придумать слой взаимодействия для network <-> database.
+/// http/ws <->db_api <-> db <-> p2p
+/// Подсказка rpc и message passing.
+/// Опционально подружить https://github.com/kotbegemot/smart_executor/tree/master/example и https://gist.github.com/kotbegemot/8ee859a807716512750c87d2c09dcbcc
+/// Можно использовать С++ 11 boost stl.
+/// Проверятся будет на ubuntu 16.04.
+/// Не надо использовать полные реализации.
+/// Используйте mock для решения задачи.
+
+class database;
+
+struct block final {
+    block(uint64_t actions, uint64_t args) : actions(actions), args(args) {}
+
+    uint64_t actions;
+    uint64_t args;
+};
+
+class handler {
+public:
+    explicit handler(database &db) : db(db) {}
+
+    virtual void apply(const block &) = 0;
+
+    virtual uint64_t id() const = 0;
+
+protected:
+    database &db;
+};
+
+class handler_storage final {
+public:
+    handler_storage() = default;
+
+    template<typename Handler, typename ...Args>
+    void add(database &db, Args... args) {
+        handler *tmp = new Handler(db, (args)...);
+        storage.emplace(tmp->id(), tmp);
+    }
+
+    bool transformation(const block &b) {
+        auto it = storage.find(b.actions);
+        if (it != storage.end()) {
+            it->second->apply(b);
+            return true;
+        }
+        return false;
+    }
+
+private:
+    std::unordered_map<uint64_t, handler *> storage;
+};
+
+
+class change_balance final : public handler {
+public:
+    explicit change_balance(database &db) : handler(db) {}
+
+    void apply(const block &) override {
+        std::cerr << "(_*_)" << std::endl;
+        db.balance(b.args);
+    }
+
+    uint64_t id() const override {
+        //code handler
+        return 1;
+    }
+
+};
+
+
+class database final {
+public:
+    database() {
+        handlers.add<change_balance>(*this);
+    }
+
+    database(const database &) = delete;
+
+    database &operator=(const database &)= delete;
+
+    uint64_t balance() const {
+        return balance_;
+    }
+
+    void balance(uint64_t balance_) {
+        this->balance_ = balance_;
+    }
+
+    void push_block(const block &b) {
+        handlers.transformation(b);
+    }
+
+private:
+    uint64_t balance_;
+    handler_storage handlers;
+};
+
+struct balance_output final {
+    uint64_t arg;
+
+    friend std::ostream &operator<<(std::ostream &os, const balance_output &args1) {
+        os << "args: " << args1.arg;
+        return os;
+    }
+};
+
+class database_api final {
+public:
+    explicit database_api(database &db) : db(db) {
+    }
+
+    balance_output balance() const {
+        std::cerr << "^_*_^" << std::endl;
+        balance_output tmp{};
+        tmp.arg = db.balance();
+        return tmp;
+    }
+
+private:
+    database &db;
+};
